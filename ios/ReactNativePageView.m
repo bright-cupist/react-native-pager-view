@@ -54,6 +54,7 @@
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+    
     if (self.reactPageViewController) {
         [self shouldScroll:self.scrollEnabled];
 
@@ -257,28 +258,16 @@
     
     self.reactPageIndicatorView.numberOfPages = numberOfPages;
     self.reactPageIndicatorView.currentPage = index;
-    long diff = labs(index - _currentIndex);
     
-    if (isForward && diff > 0) {
-        for (NSInteger i=_currentIndex; i<=index; i++) {
-            if (i == _currentIndex) {
-                continue;
-            }
+    if (index > self.currentIndex) {
+        for (NSInteger i=_currentIndex + 1; i <= index; i++) {
             [self goToViewController:i direction:direction animated:animated shouldCallOnPageSelected: i == index];
         }
-    }
-    
-    if (!isForward && diff > 0) {
-        for (NSInteger i=_currentIndex; i>=index; i--) {
-            // Prevent removal of one or many pages at a time
-            if (i == _currentIndex || i >= numberOfPages) {
-                continue;
-            }
+    } else if (index < self.currentIndex) {
+        for (NSInteger i=_currentIndex - 1; i >= index; i--) {
             [self goToViewController:i direction:direction animated:animated shouldCallOnPageSelected: i == index];
         }
-    }
-    
-    if (diff == 0) {
+    } else {
         [self goToViewController:index direction:direction animated:animated shouldCallOnPageSelected:YES];
     }
 }
@@ -361,13 +350,13 @@
 
 - (UIViewController *)pageViewController:(UIPageViewController *)pageViewController
        viewControllerAfterViewController:(UIViewController *)viewController {
-    UIPageViewControllerNavigationDirection direction = [self isLtrLayout] ? UIPageViewControllerNavigationDirectionForward : UIPageViewControllerNavigationDirectionReverse;
+    UIPageViewControllerNavigationDirection direction = [self isLtrLanguage] && ![self isLtrLayout] ? UIPageViewControllerNavigationDirectionReverse : UIPageViewControllerNavigationDirectionForward;
     return [self nextControllerForController:viewController inDirection:direction];
 }
 
 - (UIViewController *)pageViewController:(UIPageViewController *)pageViewController
       viewControllerBeforeViewController:(UIViewController *)viewController {
-    UIPageViewControllerNavigationDirection direction = [self isLtrLayout] ? UIPageViewControllerNavigationDirectionReverse : UIPageViewControllerNavigationDirectionForward;
+    UIPageViewControllerNavigationDirection direction = [self isLtrLanguage] && ![self isLtrLayout] ? UIPageViewControllerNavigationDirectionForward : UIPageViewControllerNavigationDirectionReverse;
     return [self nextControllerForController:viewController inDirection:direction];
 }
 
@@ -497,5 +486,9 @@
 
 - (BOOL)isLtrLayout {
     return [_layoutDirection isEqualToString:@"ltr"];
+}
+
+- (BOOL)isLtrLanguage {
+    return [NSLocale characterDirectionForLanguage:[[NSLocale preferredLanguages] objectAtIndex:0]] == NSLocaleLanguageDirectionLeftToRight;
 }
 @end
