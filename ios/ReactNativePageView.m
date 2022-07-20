@@ -134,7 +134,6 @@
         [hoverPanGesture setCancelsTouchesInView:NO];
         [self.scrollView addGestureRecognizer:hoverPanGesture];
     }
-    [self.scrollView setScrollEnabled:YES];
 }
 
 - (void)shouldScroll:(BOOL)scrollEnabled {
@@ -530,7 +529,11 @@
     return YES;
 }
 
-- (void)hoverPanned:(UIPanGestureRecognizer *)sender { }
+- (void)hoverPanned:(UIPanGestureRecognizer *)gestureRecognizer {
+    if (gestureRecognizer.state == UIGestureRecognizerStateEnded) {
+        [self.scrollView setScrollEnabled:YES];
+    }
+}
 
 @end
 
