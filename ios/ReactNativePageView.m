@@ -9,7 +9,7 @@
 #import "RCTOnPageSelected.h"
 #import <math.h>
 
-@interface ReactNativePageView () <UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIScrollViewDelegate>
+@interface ReactNativePageView () <UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate>
 
 @property(nonatomic, strong) UIPageViewController *reactPageViewController;
 @property(nonatomic, strong) UIPageControl *reactPageIndicatorView;
@@ -47,23 +47,14 @@
         _cachedControllers = [NSHashTable hashTableWithOptions:NSHashTableStrongMemory];
         _overdrag = NO;
         _layoutDirection = @"ltr";
-        _previousBounds = CGRectMake(0, 0, 0, 0);
     }
     return self;
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    
     if (self.reactPageViewController) {
         [self shouldScroll:self.scrollEnabled];
-
-        if (!CGRectEqualToRect(self.previousBounds, CGRectMake(0, 0, 0, 0)) && !CGRectEqualToRect(self.bounds, self.previousBounds)) {
-            // Below line fix bug, where the view does not update after orientation changed.
-            [self updateDataSource];
-        }
-
-        self.previousBounds = CGRectMake(self.bounds.origin.x, self.bounds.origin.y, self.bounds.size.width, self.bounds.size.height);
     }
 }
 
@@ -104,7 +95,7 @@
         if([subview isKindOfClass:UIScrollView.class]){
             ((UIScrollView *)subview).delegate = self;
             ((UIScrollView *)subview).keyboardDismissMode = _dismissKeyboard;
-            ((UIScrollView *)subview).delaysContentTouches = NO;
+            ((UIScrollView *)subview).delaysContentTouches = YES;
             self.scrollView = (UIScrollView *)subview;
         }
     }
@@ -136,6 +127,13 @@
         [NSLayoutConstraint activateConstraints:@[bottomConstraint, leadingConstraint, trailingConstraint]];
     }
     [pageViewController.view layoutIfNeeded];
+    
+    if (self.reactViewController.navigationController != nil) {
+        UIPanGestureRecognizer *hoverPanGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(hoverPanned:)];
+        [hoverPanGesture setDelegate:self];
+        [hoverPanGesture setCancelsTouchesInView:NO];
+        [self.scrollView addGestureRecognizer:hoverPanGesture];
+    }
 }
 
 - (void)shouldScroll:(BOOL)scrollEnabled {
@@ -258,17 +256,29 @@
     
     self.reactPageIndicatorView.numberOfPages = numberOfPages;
     self.reactPageIndicatorView.currentPage = index;
+    long diff = labs(index - _currentIndex);
     
-    if (index > self.currentIndex) {
-        for (NSInteger i=_currentIndex + 1; i <= index; i++) {
-            [self goToViewController:i direction:direction animated:animated shouldCallOnPageSelected: i == index];
+    if (isForward && diff > 0) {
+        for (NSInteger i=_currentIndex; i<=index; i++) {
+            if (i == _currentIndex) {
+                continue;
+            }
+            [self goToViewController:i direction:direction animated:(!self.animating && i == index && animated) shouldCallOnPageSelected: i == index];
         }
-    } else if (index < self.currentIndex) {
-        for (NSInteger i=_currentIndex - 1; i >= index; i--) {
-            [self goToViewController:i direction:direction animated:animated shouldCallOnPageSelected: i == index];
+    }
+    
+    if (!isForward && diff > 0) {
+        for (NSInteger i=_currentIndex; i>=index; i--) {
+            // Prevent removal of one or many pages at a time
+            if (i == _currentIndex || i >= numberOfPages) {
+                continue;
+            }
+            [self goToViewController:i direction:direction animated:(!self.animating && i == index && animated) shouldCallOnPageSelected: i == index];
         }
-    } else {
-        [self goToViewController:index direction:direction animated:animated shouldCallOnPageSelected:YES];
+    }
+    
+    if (diff == 0) {
+        [self goToViewController:index direction:direction animated:NO shouldCallOnPageSelected:YES];
     }
 }
 
@@ -411,7 +421,14 @@
     }
 }
 
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
+    if (!decelerate) {
+        [self.scrollView setScrollEnabled:YES];
+    }
+}
+
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
+    [self.scrollView setScrollEnabled:YES];
     [self.eventDispatcher sendEvent:[[RCTOnPageScrollStateChanged alloc] initWithReactTag:self.reactTag state:@"idle" coalescingKey:_coalescingKey++]];
 }
 
@@ -428,6 +445,7 @@
         if (self.frame.size.width != 0) {
             offset = (point.x - self.frame.size.width)/self.frame.size.width;
         }
+        
     } else {
         if (self.frame.size.height != 0) {
             offset = (point.y - self.frame.size.height)/self.frame.size.height;
@@ -491,4 +509,31 @@
 - (BOOL)isLtrLanguage {
     return [NSLocale characterDirectionForLanguage:[[NSLocale preferredLanguages] objectAtIndex:0]] == NSLocaleLanguageDirectionLeftToRight;
 }
+
+#pragma mark - UIGestureRecognizerDelegate
+
+- (BOOL)gestureRecognizerShouldBegin:(UIPanGestureRecognizer *)gestureRecognizer
+{
+    CGPoint translation = [gestureRecognizer translationInView:gestureRecognizer.view];
+    BOOL isLeftToRight = [UIApplication sharedApplication].userInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionLeftToRight;
+    CGFloat multiplier = isLeftToRight ? 1 : - 1;
+    if (translation.y != 0 || (translation.x * multiplier) <= 0)  {
+        [self.scrollView setScrollEnabled:YES];
+        return NO;
+    }
+    [self.scrollView setScrollEnabled:self.currentIndex > 0];
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
+}
+
+- (void)hoverPanned:(UIPanGestureRecognizer *)gestureRecognizer {
+    if (gestureRecognizer.state == UIGestureRecognizerStateEnded) {
+        [self.scrollView setScrollEnabled:YES];
+    }
+}
+
 @end
+
