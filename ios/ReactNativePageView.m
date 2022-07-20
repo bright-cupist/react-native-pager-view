@@ -47,23 +47,14 @@
         _cachedControllers = [NSHashTable hashTableWithOptions:NSHashTableStrongMemory];
         _overdrag = NO;
         _layoutDirection = @"ltr";
-        _previousBounds = CGRectMake(0, 0, 0, 0);
     }
     return self;
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    
     if (self.reactPageViewController) {
         [self shouldScroll:self.scrollEnabled];
-
-        if (!CGRectEqualToRect(self.previousBounds, CGRectMake(0, 0, 0, 0)) && !CGRectEqualToRect(self.bounds, self.previousBounds)) {
-            // Below line fix bug, where the view does not update after orientation changed.
-            [self updateDataSource];
-        }
-
-        self.previousBounds = CGRectMake(self.bounds.origin.x, self.bounds.origin.y, self.bounds.size.width, self.bounds.size.height);
     }
 }
 
@@ -266,17 +257,29 @@
     
     self.reactPageIndicatorView.numberOfPages = numberOfPages;
     self.reactPageIndicatorView.currentPage = index;
+    long diff = labs(index - _currentIndex);
     
-    if (index > self.currentIndex) {
-        for (NSInteger i=_currentIndex + 1; i <= index; i++) {
-            [self goToViewController:i direction:direction animated:animated shouldCallOnPageSelected: i == index];
+    if (isForward && diff > 0) {
+        for (NSInteger i=_currentIndex; i<=index; i++) {
+            if (i == _currentIndex) {
+                continue;
+            }
+            [self goToViewController:i direction:direction animated:(!self.animating && i == index && animated) shouldCallOnPageSelected: i == index];
         }
-    } else if (index < self.currentIndex) {
-        for (NSInteger i=_currentIndex - 1; i >= index; i--) {
-            [self goToViewController:i direction:direction animated:animated shouldCallOnPageSelected: i == index];
+    }
+    
+    if (!isForward && diff > 0) {
+        for (NSInteger i=_currentIndex; i>=index; i--) {
+            // Prevent removal of one or many pages at a time
+            if (i == _currentIndex || i >= numberOfPages) {
+                continue;
+            }
+            [self goToViewController:i direction:direction animated:(!self.animating && i == index && animated) shouldCallOnPageSelected: i == index];
         }
-    } else {
-        [self goToViewController:index direction:direction animated:animated shouldCallOnPageSelected:YES];
+    }
+    
+    if (diff == 0) {
+        [self goToViewController:index direction:direction animated:NO shouldCallOnPageSelected:YES];
     }
 }
 
@@ -443,6 +446,7 @@
         if (self.frame.size.width != 0) {
             offset = (point.x - self.frame.size.width)/self.frame.size.width;
         }
+        
     } else {
         if (self.frame.size.height != 0) {
             offset = (point.y - self.frame.size.height)/self.frame.size.height;
@@ -529,3 +533,4 @@
 - (void)hoverPanned:(UIPanGestureRecognizer *)sender { }
 
 @end
+
