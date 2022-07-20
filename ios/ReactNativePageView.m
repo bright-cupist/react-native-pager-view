@@ -9,7 +9,7 @@
 #import "RCTOnPageSelected.h"
 #import <math.h>
 
-@interface ReactNativePageView () <UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIScrollViewDelegate>
+@interface ReactNativePageView () <UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate>
 
 @property(nonatomic, strong) UIPageViewController *reactPageViewController;
 @property(nonatomic, strong) UIPageControl *reactPageIndicatorView;
@@ -104,7 +104,7 @@
         if([subview isKindOfClass:UIScrollView.class]){
             ((UIScrollView *)subview).delegate = self;
             ((UIScrollView *)subview).keyboardDismissMode = _dismissKeyboard;
-            ((UIScrollView *)subview).delaysContentTouches = NO;
+            ((UIScrollView *)subview).delaysContentTouches = YES;
             self.scrollView = (UIScrollView *)subview;
         }
     }
@@ -136,6 +136,14 @@
         [NSLayoutConstraint activateConstraints:@[bottomConstraint, leadingConstraint, trailingConstraint]];
     }
     [pageViewController.view layoutIfNeeded];
+    
+    if (self.reactViewController.navigationController != nil) {
+        UIPanGestureRecognizer *hoverPanGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(hoverPanned:)];
+        [hoverPanGesture setDelegate:self];
+        [hoverPanGesture setCancelsTouchesInView:NO];
+        [self.scrollView addGestureRecognizer:hoverPanGesture];
+    }
+    [self.scrollView setScrollEnabled:YES];
 }
 
 - (void)shouldScroll:(BOOL)scrollEnabled {
@@ -411,7 +419,14 @@
     }
 }
 
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
+    if (!decelerate) {
+        [self.scrollView setScrollEnabled:YES];
+    }
+}
+
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
+    [self.scrollView setScrollEnabled:YES];
     [self.eventDispatcher sendEvent:[[RCTOnPageScrollStateChanged alloc] initWithReactTag:self.reactTag state:@"idle" coalescingKey:_coalescingKey++]];
 }
 
@@ -491,4 +506,26 @@
 - (BOOL)isLtrLanguage {
     return [NSLocale characterDirectionForLanguage:[[NSLocale preferredLanguages] objectAtIndex:0]] == NSLocaleLanguageDirectionLeftToRight;
 }
+
+#pragma mark - UIGestureRecognizerDelegate
+
+- (BOOL)gestureRecognizerShouldBegin:(UIPanGestureRecognizer *)gestureRecognizer
+{
+    CGPoint translation = [gestureRecognizer translationInView:gestureRecognizer.view];
+    BOOL isLeftToRight = [UIApplication sharedApplication].userInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionLeftToRight;
+    CGFloat multiplier = isLeftToRight ? 1 : - 1;
+    if (translation.y != 0 || (translation.x * multiplier) <= 0)  {
+        [self.scrollView setScrollEnabled:YES];
+        return NO;
+    }
+    [self.scrollView setScrollEnabled:self.currentIndex > 0];
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
+}
+
+- (void)hoverPanned:(UIPanGestureRecognizer *)sender { }
+
 @end
